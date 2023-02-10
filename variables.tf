@@ -4,6 +4,30 @@ variable "zone_id" {
   default     = null
 }
 
+variable "use_fleet" {
+  type = string
+  description = "If set to `true`, will use fleet instead of `instance group`"
+  default = "disabled"
+}
+
+variable "use_fleet_task_nodes" {
+  type = string
+  description = "If set to `true` - spin fleet for task nodes"
+  default = "disabled"
+}
+
+variable "task_fleet_spot_capacity" {
+  type = number
+  description = "Amount of needed task spot instances"
+  default = null
+}
+
+variable "task_fleet_ondemand_capacity" {
+  type = number
+  description = "Amount of needed task on-demand instances"
+  default = null
+}
+
 variable "use_existing_managed_master_security_group" {
   type        = bool
   description = "If set to `true`, will use variable `managed_master_security_group` using an existing security group that was created outside of this module"
@@ -63,7 +87,6 @@ variable "service_access_security_group" {
   default     = ""
   description = "The id of the existing additional security group that will be used for EMR core & task nodes. If empty, a new security group will be created"
 }
-
 
 variable "master_allowed_security_groups" {
   type        = list(string)
