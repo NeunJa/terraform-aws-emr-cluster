@@ -538,7 +538,6 @@ resource "aws_emr_cluster" "default" {
         }
 
       }
-      launch_specifications {}
     }
   }
 
