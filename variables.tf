@@ -10,6 +10,24 @@ variable "use_fleet" {
   default = false
 }
 
+variable "fleet_managed_scaling_policy_compute_limits" {
+  type = object({
+    unit_type                       = string
+    minimum_capacity_units          = number
+    maximum_capacity_units          = number
+    maximum_ondemand_capacity_units = number
+    maximum_core_capacity_units     = number
+  })
+  description = "Set compute limits for managed scaling policy (used with fleet)."
+  default     = {
+    unit_type                       = "InstanceFleetUnits"
+    minimum_capacity_units          = 1
+    maximum_capacity_units          = 2
+    maximum_ondemand_capacity_units = 2
+    maximum_core_capacity_units     = 2
+  }
+}
+
 variable "task_fleet_spot_capacity" {
   type = number
   description = "Amount of needed task spot instances"

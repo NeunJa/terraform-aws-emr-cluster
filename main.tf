@@ -630,26 +630,15 @@ resource "aws_emr_instance_fleet" "task" {
 }
 #
 resource "aws_emr_managed_scaling_policy" "task_policy" {
-  count = var.use_fleet ? 1 : 0
+  count      = var.use_fleet ? 1 : 0
   cluster_id = aws_emr_cluster.default[0].id
-#  dynamic "compute_limits" {
-#    for_each = var.fleet_manage_scaling_policy_compute_limits
-#
-#      content {
-#        unit_type                       = "InstanceFleetUnits"
-#        minimum_capacity_units          = 1
-#        maximum_capacity_units          = 12
-#        maximum_ondemand_capacity_units = 6
-#        maximum_core_capacity_units     = 2
-#    }
-#  }
+
   compute_limits {
-    #
-    unit_type                       = "InstanceFleetUnits"
-    minimum_capacity_units          = 1
-    maximum_capacity_units          = 12
-    maximum_ondemand_capacity_units = 6
-    maximum_core_capacity_units     = 2
+    unit_type                       = var.fleet_managed_scaling_policy_compute_limits.unit_type
+    minimum_capacity_units          = var.fleet_managed_scaling_policy_compute_limits.minimum_capacity_units
+    maximum_capacity_units          = var.fleet_managed_scaling_policy_compute_limits.maximum_capacity_units
+    maximum_ondemand_capacity_units = var.fleet_managed_scaling_policy_compute_limits.maximum_ondemand_capacity_units
+    maximum_core_capacity_units     = var.fleet_managed_scaling_policy_compute_limits.maximum_core_capacity_units
   }
 }
 
