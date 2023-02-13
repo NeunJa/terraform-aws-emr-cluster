@@ -23,6 +23,9 @@ locals {
     kdc_admin_password                   = var.kerberos_kdc_admin_password
     realm                                = var.kerberos_realm
   }
+
+  autoscaling_role = var.ec2_autoscaling_role_enabled ? join("", aws_iam_role.ec2_autoscaling.*.arn) : var.existing_ec2_autoscaling_role_arn
+
 }
 
 data "aws_partition" "current" {
@@ -463,7 +466,7 @@ resource "aws_emr_cluster" "default" {
   applications = var.applications
 
   dynamic "core_instance_group" {
-    for_each = var.use_fleet == "disabled" ? [1] : []
+    for_each = var.use_fleet == false ? [1] : []
     content {
       name           = module.label_core.id
       instance_type  = var.core_instance_group_instance_type
@@ -482,7 +485,7 @@ resource "aws_emr_cluster" "default" {
   }
 
   dynamic "master_instance_group" {
-    for_each = var.use_fleet == "disabled" ? [1] : []
+    for_each = var.use_fleet == false ? [1] : []
     content {
       name           = module.label_master.id
       instance_type  = var.master_instance_group_instance_type
@@ -499,48 +502,43 @@ resource "aws_emr_cluster" "default" {
   }
 
   dynamic "master_instance_fleet" {
-    for_each = var.use_fleet == "enabled" ? [1] : []
+    for_each = var.use_fleet == true ? [1] : []
     content {
+      name  = "master fleet"
+      target_on_demand_capacity = var.master_instance_group_instance_count
+
       instance_type_configs {
         instance_type = var.master_instance_group_instance_type
+        bid_price      = var.master_instance_group_bid_price
+
         ebs_config {
-          size = 150
-          type = "gp2"
+          size = var.master_instance_group_ebs_size
+          type = var.master_instance_group_ebs_type
+          volumes_per_instance = var.master_instance_group_ebs_volumes_per_instance
         }
       }
-      target_on_demand_capacity = var.master_instance_group_instance_count
-      name  = "master fleet"
     }
   }
 
   dynamic "core_instance_fleet" {
-    for_each = var.use_fleet == "enabled" ? [1] : []
+    for_each = var.use_fleet == true ? [1] : []
     content {
+      name = "core fleet"
+      target_on_demand_capacity = var.core_instance_group_instance_count
+
       instance_type_configs {
-        #        bid_price_as_percentage_of_on_demand_price = 100
+        instance_type     = var.core_instance_group_instance_type
+        bid_price      = var.core_instance_group_bid_price
+        weighted_capacity = 1
+
         ebs_config {
           size                 = var.core_instance_group_ebs_size
           type                 = var.core_instance_group_ebs_type
-          volumes_per_instance = 1
+          volumes_per_instance = var.core_instance_group_ebs_volumes_per_instance
         }
-        instance_type     = var.core_instance_group_instance_type
-        weighted_capacity = 1
+
       }
-      launch_specifications {
-        #TBD: are we going to use spot instances for CORE? Best Practices said that need to use on-demand for core
-        #        spot_specification {
-        #          allocation_strategy      = "capacity-optimized"
-        #          block_duration_minutes   = 0
-        #          timeout_action           = "SWITCH_TO_ON_DEMAND"
-        #          timeout_duration_minutes = 10
-        #        }
-        on_demand_specification {
-          allocation_strategy = "lowest-price"
-        }
-      }
-      name = "core fleet"
-      target_on_demand_capacity = var.core_instance_group_instance_count
-      #      target_spot_capacity      = var.core_fleet_spot_capacity
+      launch_specifications {}
     }
   }
 
@@ -595,8 +593,9 @@ resource "aws_emr_cluster" "default" {
   log_uri = var.log_uri
 
   service_role     = var.service_role_enabled ? join("", aws_iam_role.emr.*.arn) : var.existing_service_role_arn
-  #  autoscaling_role = var.ec2_autoscaling_role_enabled ? join("", aws_iam_role.ec2_autoscaling.*.arn) : var.existing_ec2_autoscaling_role_arn
 
+  # If fleet is using - it no needed
+  autoscaling_role = var.use_fleet ? null : local.autoscaling_role
   # configurations_json changes are ignored because of terraform bug. Configuration changes are applied via local.bootstrap_action.
   lifecycle {
     ignore_changes = [kerberos_attributes, step, configurations_json]
@@ -606,26 +605,24 @@ resource "aws_emr_cluster" "default" {
 }
 
 resource "aws_emr_instance_fleet" "task" {
-  ###after changing vars to 'disable' - fleet does not deleted, but scaled to 0
-  #  count = var.use_fleet_task_nodes == "enabled" && var.use_fleet == "enabled" ? 1 : 0
+  count = local.enabled && var.create_task_instance_fleet ? 1 : 0
   cluster_id = aws_emr_cluster.default[0].id
   instance_type_configs {
     bid_price_as_percentage_of_on_demand_price = var.task_instance_group_bid_price
     ebs_config {
-      #      size = var.task_instance_group_ebs_size
-      size                 = 250
-      type                 = "gp2"
-      volumes_per_instance = 1
+      size                 = var.task_instance_group_ebs_size
+      type                 = var.task_instance_group_ebs_type
+      volumes_per_instance = var.task_instance_group_ebs_volumes_per_instance
     }
     instance_type     = var.task_instance_group_instance_type
     weighted_capacity = 1
   }
   launch_specifications {
     spot_specification {
-      allocation_strategy      = "capacity-optimized"
-      block_duration_minutes   = 0
-      timeout_action           = "SWITCH_TO_ON_DEMAND"
-      timeout_duration_minutes = 10
+      allocation_strategy      = var.task_instance_fleet_allocation_strategy
+      block_duration_minutes   = var.task_instance_fleet_block_duration_minutes
+      timeout_action           = var.task_instance_fleet_timeout_action
+      timeout_duration_minutes = var.task_instance_fleet_timeout_duration_minutes
     }
   }
   name                      = "task fleet"
@@ -634,8 +631,21 @@ resource "aws_emr_instance_fleet" "task" {
 }
 #
 resource "aws_emr_managed_scaling_policy" "task_policy" {
+  count = var.use_fleet ? 1 : 0
   cluster_id = aws_emr_cluster.default[0].id
+#  dynamic "compute_limits" {
+#    for_each = var.fleet_manage_scaling_policy_compute_limits
+#
+#      content {
+#        unit_type                       = "InstanceFleetUnits"
+#        minimum_capacity_units          = 1
+#        maximum_capacity_units          = 12
+#        maximum_ondemand_capacity_units = 6
+#        maximum_core_capacity_units     = 2
+#    }
+#  }
   compute_limits {
+    #
     unit_type                       = "InstanceFleetUnits"
     minimum_capacity_units          = 1
     maximum_capacity_units          = 12
@@ -646,26 +656,26 @@ resource "aws_emr_managed_scaling_policy" "task_policy" {
 
 # https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-master-core-task-nodes.html
 # https://www.terraform.io/docs/providers/aws/r/emr_instance_group.html
-#resource "aws_emr_instance_group" "task" {
-#  count = local.enabled && var.create_task_instance_group ? 1 : 0
-#
-#  name       = module.label_task.id
-#  cluster_id = join("", aws_emr_cluster.default.*.id)
-#
-#  instance_type  = var.task_instance_group_instance_type
-#  instance_count = var.task_instance_group_instance_count
-#
-#  ebs_config {
-#    size                 = var.task_instance_group_ebs_size
-#    type                 = var.task_instance_group_ebs_type
-#    iops                 = var.task_instance_group_ebs_iops
-#    volumes_per_instance = var.task_instance_group_ebs_volumes_per_instance
-#  }
-#
-#  bid_price          = var.task_instance_group_bid_price
-#  ebs_optimized      = var.task_instance_group_ebs_optimized
-#  autoscaling_policy = var.task_instance_group_autoscaling_policy
-#}
+resource "aws_emr_instance_group" "task" {
+  count = local.enabled && var.create_task_instance_group ? 1 : 0
+
+  name       = module.label_task.id
+  cluster_id = join("", aws_emr_cluster.default.*.id)
+
+  instance_type  = var.task_instance_group_instance_type
+  instance_count = var.task_instance_group_instance_count
+
+  ebs_config {
+    size                 = var.task_instance_group_ebs_size
+    type                 = var.task_instance_group_ebs_type
+    iops                 = var.task_instance_group_ebs_iops
+    volumes_per_instance = var.task_instance_group_ebs_volumes_per_instance
+  }
+
+  bid_price          = var.task_instance_group_bid_price
+  ebs_optimized      = var.task_instance_group_ebs_optimized
+  autoscaling_policy = var.task_instance_group_autoscaling_policy
+}
 
 module "dns_master" {
   source  = "cloudposse/route53-cluster-hostname/aws"

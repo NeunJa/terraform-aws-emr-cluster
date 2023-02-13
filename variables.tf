@@ -5,15 +5,9 @@ variable "zone_id" {
 }
 
 variable "use_fleet" {
-  type = string
+  type = bool
   description = "If set to `true`, will use fleet instead of `instance group`"
-  default = "disabled"
-}
-
-variable "use_fleet_task_nodes" {
-  type = string
-  description = "If set to `true` - spin fleet for task nodes"
-  default = "disabled"
+  default = false
 }
 
 variable "task_fleet_spot_capacity" {
@@ -26,6 +20,35 @@ variable "task_fleet_ondemand_capacity" {
   type = number
   description = "Amount of needed task on-demand instances"
   default = null
+}
+
+variable "create_task_instance_fleet" {
+  type        = bool
+  description = "Whether to create an instance fleet for Task nodes."
+  default     = false
+}
+
+variable "task_instance_fleet_allocation_strategy" {
+  type = string
+  description = "Allocation strategy for task instance fleet"
+  default = "capacity-optimized"
+}
+
+variable "task_instance_fleet_timeout_duration_minutes" {
+  type = number
+  description = "Task instance fleet timeout duration minutes"
+  default = 10
+}
+
+variable "task_instance_fleet_timeout_action" {
+  type = string
+  description = "Timeout action for task instance fleet"
+  default = "SWITCH_TO_ON_DEMAND"
+}
+
+variable "task_instance_fleet_block_duration_minutes" {
+  type = number
+  default = 0
 }
 
 variable "use_existing_managed_master_security_group" {
